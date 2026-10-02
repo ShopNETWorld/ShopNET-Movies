@@ -175,6 +175,9 @@ importers:
       '@shopnet/config-typescript':
         specifier: workspace:*
         version: link:packages/config-typescript
+      next:
+        specifier: ^14.2.10
+        version: 14.2.35(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       prettier:
         specifier: ^3.3.3
         version: 3.9.8

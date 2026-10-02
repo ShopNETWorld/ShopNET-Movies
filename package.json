@@ -19,6 +19,7 @@
     "@neon/config": "^1.8.3",
     "@neon/env": "^1.4.8",
     "@shopnet/config-typescript": "workspace:*",
+    "next": "^14.2.10",
     "prettier": "^3.3.3",
     "rimraf": "^6.0.1",
     "turbo": "^2.1.2",
