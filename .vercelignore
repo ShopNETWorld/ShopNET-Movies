@@ -1,0 +1,9 @@
+.git
+.github
+.turbo
+node_modules
+docker-compose*.yml
+benchmark
+docs
+prompts
+*.log

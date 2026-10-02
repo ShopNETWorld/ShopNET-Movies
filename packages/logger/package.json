@@ -1,0 +1,20 @@
+{
+  "name": "@shopnet/logger",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "@shopnet/config-typescript": "workspace:*",
+    "@types/node": "^20.16.5",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}

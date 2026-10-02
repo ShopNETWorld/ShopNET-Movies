@@ -1,0 +1,14 @@
+{
+  "name": "shopnet-provider-benchmark",
+  "version": "1.0.0",
+  "description": "Provider benchmark harness for ShopNET Movies candidate video AI models",
+  "type": "module",
+  "scripts": {
+    "benchmark": "node src/runner.js",
+    "benchmark:live": "node src/runner.js --mode=live",
+    "benchmark:mock": "node src/runner.js --mode=mock"
+  },
+  "keywords": ["shopnet", "benchmark", "ai", "video"],
+  "author": "ShopNET Movies",
+  "license": "UNLICENSED"
+}

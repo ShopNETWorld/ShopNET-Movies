@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Turborepo
+.turbo/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Editor & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Temporary media & benchmark output
+benchmark/results/*.json
+!benchmark/results/.gitkeep
+temp/
+scratch/
+.neon
+.vercel

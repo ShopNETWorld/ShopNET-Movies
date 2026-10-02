@@ -1,0 +1,619 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -----------------------------------------------------------------------------
+// Core Identity & Multi-Tenant Workspaces
+// -----------------------------------------------------------------------------
+
+enum UserRole {
+  USER
+  CREATOR
+  PRODUCER
+  ADMIN
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  name                String
+  role                UserRole             @default(CREATOR)
+  avatarUrl           String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  // Multi-tenancy & Projects
+  ownedWorkspaces     Workspace[]          @relation("WorkspaceOwner")
+  workspaceMemberships WorkspaceMember[]
+  projects            Project[]            @relation("ProjectOwner")
+
+  // Generation & Assets
+  uploadedAssets      MediaAsset[]         @relation("AssetUploader")
+  generationJobs      GenerationJob[]
+  usageRecords        UsageRecord[]
+
+  // Credits & Accounting
+  creditAccount       CreditAccount?
+  subscriptions       Subscription[]
+  payments            Payment[]
+  auditLogs           SecurityAuditLog[]
+
+  @@map("users")
+}
+
+model Workspace {
+  id          String            @id @default(cuid())
+  name        String
+  slug        String            @unique
+  ownerId     String
+  owner       User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  members     WorkspaceMember[]
+  projects    Project[]
+  socialAccounts SocialAccount[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+// -----------------------------------------------------------------------------
+// Projects & Creative Development
+// -----------------------------------------------------------------------------
+
+enum ProjectStatus {
+  DRAFT
+  IN_PROGRESS
+  PRODUCED
+  ARCHIVED
+}
+
+enum AspectRatio {
+  RATIO_16_9   @map("16:9")
+  RATIO_9_16   @map("9:16")
+  RATIO_1_1    @map("1:1")
+  RATIO_2_39_1 @map("2.39:1")
+}
+
+model Project {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  ownerId           String
+  title             String
+  logline           String?         @db.Text
+  synopsis          String?         @db.Text
+  genre             String          @default("Drama")
+  targetAudience    String?
+  primaryLanguage   String          @default("English")
+  secondaryLanguage String?
+  aspectRatio       AspectRatio     @default(RATIO_16_9)
+  status            ProjectStatus   @default(DRAFT)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner             User            @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  scripts           Script[]
+  characters        Character[]
+  scenes            Scene[]
+  mediaAssets       MediaAsset[]
+  generationJobs    GenerationJob[]
+  usageRecords      UsageRecord[]
+
+  @@index([workspaceId])
+  @@index([ownerId])
+  @@map("projects")
+}
+
+// -----------------------------------------------------------------------------
+// Scripts, Screenplays & Characters
+// -----------------------------------------------------------------------------
+
+model Script {
+  id          String      @id @default(cuid())
+  projectId   String
+  version     Int         @default(1)
+  title       String
+  content     String      @db.Text // Fountain / Screenplay markup
+  rawText     String?     @db.Text
+  isCurrent   Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenes      Scene[]
+
+  @@unique([projectId, version])
+  @@map("scripts")
+}
+
+model Character {
+  id                    String        @id @default(cuid())
+  projectId             String
+  name                  String
+  alias                 String?
+  description           String?       @db.Text
+  bio                   String?       @db.Text
+  ageRange              String?
+  gender                String?
+  ethnicBackground      String?       // e.g. Yoruba, Igbo, Hausa, African American
+  visualPrompt          String?       @db.Text // Consistent character visual prompt
+  voiceProvider         String?       // e.g. ELEVENLABS
+  voiceVoiceId          String?       // Provider Voice ID
+  voiceCharacteristics  Json?         // { pitch, accent, tone }
+  referenceImageUrl     String?
+  referenceAudioUrl     String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  project               Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mediaAssets           MediaAsset[]
+
+  @@index([projectId])
+  @@map("characters")
+}
+
+// -----------------------------------------------------------------------------
+// Scene Breakdown & Storyboarding
+// -----------------------------------------------------------------------------
+
+enum TimeOfDay {
+  DAY
+  NIGHT
+  DUSK
+  DAWN
+}
+
+enum CameraMovement {
+  STATIC
+  PAN
+  TILT
+  TRACK
+  ZOOM
+  DRONE
+  HANDHELD
+}
+
+model Scene {
+  id                      String          @id @default(cuid())
+  projectId               String
+  scriptId                String?
+  sceneNumber             Int
+  slugline                String          // e.g. EXT. LAGOS MARKET - DAY
+  heading                 String?
+  description             String          @db.Text
+  estimatedDurationSeconds Float?
+  location                String?
+  timeOfDay               TimeOfDay       @default(DAY)
+  visualStyle             String?
+  prompt                  String?         @db.Text // AI generation prompt
+  negativePrompt          String?         @db.Text
+  cameraMovement          CameraMovement  @default(STATIC)
+  dialogue                Json?           // Array of { character: string, line: string, emotion?: string }
+  orderIndex              Int             @default(0)
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  project                 Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  script                  Script?         @relation(fields: [scriptId], references: [id], onDelete: SetNull)
+
+  mediaAssets             MediaAsset[]
+  generationJobs          GenerationJob[]
+
+  @@index([projectId, orderIndex])
+  @@map("scenes")
+}
+
+// -----------------------------------------------------------------------------
+// Media Assets & Object Storage Registry
+// -----------------------------------------------------------------------------
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  AUDIO
+  SCRIPT_DOCUMENT
+  SUBTITLE
+  THUMBNAIL
+}
+
+model MediaAsset {
+  id                String            @id @default(cuid())
+  projectId         String
+  sceneId           String?
+  characterId       String?
+  uploaderId        String
+  type              MediaType
+  storageKey        String            @unique // S3 path
+  storageBucket     String            @default("shopnet-media")
+  assetUrl          String
+  filename          String
+  mimeType          String
+  fileSizeBytes     BigInt?
+  width             Int?
+  height            Int?
+  durationSeconds   Float?
+  resolution        String?           // e.g. 1080p, 4k
+  aspectRatio       String?           // e.g. 16:9
+  provider          String            // e.g. RUNWAY, LUMA, OPENAI, ELEVENLABS, UPLOAD
+  model             String?           // e.g. gen-3-alpha, sora, veo-2
+  generationJobId   String?
+  metadata          Json?             // Provider-specific metadata
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  project           Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scene             Scene?            @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+  character         Character?        @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  uploader          User              @relation("AssetUploader", fields: [uploaderId], references: [id], onDelete: Cascade)
+  generationJob     GenerationJob?    @relation("JobPrimaryOutput", fields: [generationJobId], references: [id], onDelete: SetNull)
+
+  generationOutputs GenerationOutput[]
+  socialPublishJobs SocialPublishJob[]
+
+  @@index([projectId])
+  @@index([provider, model])
+  @@map("media_assets")
+}
+
+// -----------------------------------------------------------------------------
+// AI Generation Jobs & Output Lineage
+// -----------------------------------------------------------------------------
+
+enum GenerationOperation {
+  TEXT_TO_VIDEO
+  IMAGE_TO_VIDEO
+  VIDEO_EDITING
+  VIDEO_EXTENSION
+  IMAGE_GENERATION
+  VOICE_GENERATION
+  TRANSLATION
+  CAPTIONS
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  RETRYING
+}
+
+model GenerationJob {
+  id                String              @id @default(cuid())
+  projectId         String
+  userId            String
+  sceneId           String?
+  operation         GenerationOperation
+  provider          String              // e.g. runway, luma, openai, elevenlabs
+  model             String              // e.g. gen-3-alpha, sora
+  providerRequestId String?
+  status            JobStatus           @default(QUEUED)
+  progressPercent   Int                 @default(0)
+  inputParameters   Json                // { prompt, negativePrompt, resolution, duration, etc. }
+  durationSeconds   Float?
+  estimatedCostUsd  Float               @default(0.0)
+  actualCostUsd     Float?
+  creditsConsumed   Int                 @default(0)
+  retryCount        Int                 @default(0)
+  maxRetries        Int                 @default(3)
+  failureReason     String?             @db.Text
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  project           Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scene             Scene?              @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+
+  primaryOutputs    MediaAsset[]        @relation("JobPrimaryOutput")
+  outputs           GenerationOutput[]
+  usageRecords      UsageRecord[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([status])
+  @@map("generation_jobs")
+}
+
+model GenerationOutput {
+  id            String        @id @default(cuid())
+  jobId         String
+  mediaAssetId  String
+  outputType    String        @default("PRIMARY") // PRIMARY, PREVIEW, THUMBNAIL, STEM
+  createdAt     DateTime      @default(now())
+
+  job           GenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  mediaAsset    MediaAsset    @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, mediaAssetId])
+  @@map("generation_outputs")
+}
+
+// -----------------------------------------------------------------------------
+// Granular Usage Records (Cost Accounting & Provider Audits)
+// -----------------------------------------------------------------------------
+
+model UsageRecord {
+  id              String         @id @default(cuid())
+  userId          String
+  projectId       String?
+  jobId           String?
+  provider        String
+  model           String
+  operation       String
+  inputUnits      Float          @default(0) // characters, tokens, seconds
+  outputUnits     Float          @default(0) // generated seconds, images
+  providerCostUsd Float          @default(0)
+  creditsCharged  Int            @default(0)
+  createdAt       DateTime       @default(now())
+
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  job             GenerationJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([jobId])
+  @@index([provider, model])
+  @@map("usage_records")
+}
+
+// -----------------------------------------------------------------------------
+// Credit Foundation & Append-Only Financial Ledger
+// -----------------------------------------------------------------------------
+
+enum CreditTransactionReason {
+  PURCHASE
+  SUBSCRIPTION_GRANT
+  GENERATION_DEDUCTION
+  REFUND
+  ADMIN_ADJUSTMENT
+  WEBHOOK_GRANT
+}
+
+model CreditAccount {
+  id                      String              @id @default(cuid())
+  userId                  String              @unique
+  balanceCredits          Int                 @default(0)
+  lifetimeGrantedCredits  Int                 @default(0)
+  lifetimeConsumedCredits Int                 @default(0)
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  user                    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions            CreditTransaction[]
+
+  @@map("credit_accounts")
+}
+
+model CreditTransaction {
+  id              String                  @id @default(cuid())
+  accountId       String
+  amount          Int                     // Signed: positive = credit grant, negative = debit
+  balanceAfter    Int
+  reason          CreditTransactionReason
+  referenceId     String?                 // e.g. jobId, purchaseRef
+  idempotencyKey  String                  @unique // Guarantees idempotent operations
+  createdAt       DateTime                @default(now()) // Strictly append-only ledger
+
+  account         CreditAccount           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([reason])
+  @@map("credit_transactions")
+}
+
+// -----------------------------------------------------------------------------
+// Subscription Plans & Billing
+// -----------------------------------------------------------------------------
+
+enum PlanInterval {
+  MONTHLY
+  ANNUALLY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  PAST_DUE
+  EXPIRED
+  TRIALING
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+model SubscriptionPlan {
+  id                    String          @id @default(cuid())
+  name                  String          @unique   // e.g. "Free", "Creator", "Producer"
+  slug                  String          @unique   // e.g. "free", "creator", "producer"
+  description           String?         @db.Text
+  interval              PlanInterval    @default(MONTHLY)
+  amountNgn             Int             @default(0)  // Price in kobo (Paystack)
+  amountUsdCents        Int             @default(0)  // Price in cents (Stripe)
+  creditsPerCycle       Int             @default(0)  // Credits granted each billing cycle
+  paystackPlanCode      String?         // Paystack plan code, e.g. "PLN_xxxx"
+  stripePriceId         String?         // Stripe Price ID, e.g. "price_xxxx"
+  isActive              Boolean         @default(true)
+  displayOrder          Int             @default(0)
+  features              Json?           // Array of feature strings for UI display
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  subscriptions         Subscription[]
+
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id                    String              @id @default(cuid())
+  userId                String
+  planId                String
+  status                SubscriptionStatus  @default(ACTIVE)
+  provider              String              // "paystack" or "stripe"
+  providerSubscriptionId String?            // External subscription ID
+  providerCustomerId    String?             // External customer ID
+  currentPeriodStart    DateTime?
+  currentPeriodEnd      DateTime?
+  cancelledAt           DateTime?
+  cancelAtPeriodEnd     Boolean             @default(false)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                  SubscriptionPlan    @relation(fields: [planId], references: [id])
+  payments              Payment[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                    String          @id @default(cuid())
+  userId                String
+  subscriptionId        String?
+  provider              String          // "paystack" or "stripe"
+  providerReference     String          @unique  // Paystack reference or Stripe PaymentIntent ID
+  amount                Int             // Amount in subunits (kobo or cents)
+  currency              String          @default("NGN") // "NGN" or "USD"
+  status                PaymentStatus   @default(PENDING)
+  paidAt                DateTime?
+  refundedAt            DateTime?
+  refundAmountSubunits  Int?            // Partial or full refund amount
+  metadata              Json?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription          Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([provider, providerReference])
+  @@index([status])
+  @@map("payments")
+}
+
+model WebhookEvent {
+  id                    String          @id @default(cuid())
+  provider              String          // "paystack" or "stripe"
+  providerEventId       String          // External event ID for deduplication
+  eventType             String          // e.g. "charge.success", "invoice.payment_succeeded"
+  payload               Json            // Raw webhook payload
+  processed             Boolean         @default(false)
+  processedAt           DateTime?
+  failureReason         String?         @db.Text
+  createdAt             DateTime        @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([provider, eventType])
+  @@map("webhook_events")
+}
+
+// -----------------------------------------------------------------------------
+// Security Audit Logs
+// -----------------------------------------------------------------------------
+
+model SecurityAuditLog {
+  id          String    @id @default(cuid())
+  userId      String?
+  event       String    // e.g. AUTH_LOGIN_SUCCESS, ROLE_ELEVATION, PROJECT_DELETION
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([event])
+  @@map("security_audit_logs")
+}
+
+// -----------------------------------------------------------------------------
+// Social Publishing & Distribution
+// -----------------------------------------------------------------------------
+
+model SocialAccount {
+  id                    String             @id @default(cuid())
+  workspaceId           String
+  platform              String             // e.g. YOUTUBE, TIKTOK, INSTAGRAM, FACEBOOK
+  accountId             String             // External platform account ID
+  username              String?            // External platform username or channel name
+  encryptedAccessToken  String             @db.Text
+  encryptedRefreshToken String?            @db.Text
+  tokenExpiresAt        DateTime?
+  metadata              Json?              // Extra platform-specific configuration
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  workspace             Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  publishJobs           SocialPublishJob[]
+
+  @@unique([workspaceId, platform, accountId])
+  @@index([workspaceId])
+  @@map("social_accounts")
+}
+
+enum PublishJobStatus {
+  QUEUED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+model SocialPublishJob {
+  id              String           @id @default(cuid())
+  socialAccountId String
+  mediaAssetId    String
+  status          PublishJobStatus @default(QUEUED)
+  scheduledAt     DateTime?
+  retryCount      Int              @default(0)
+  maxRetries      Int              @default(3)
+  failureReason   String?          @db.Text
+  platformPostId  String?          // The ID of the post on the target platform
+  platformPostUrl String?          // The URL of the live post
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  socialAccount   SocialAccount    @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  mediaAsset      MediaAsset       @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@index([socialAccountId])
+  @@index([mediaAssetId])
+  @@index([status])
+  @@map("social_publish_jobs")
+}

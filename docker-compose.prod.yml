@@ -1,0 +1,165 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: shopnet-prod-api
+    restart: always
+    env_file:
+      - .env.production
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - shopnet-prod-network
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health/liveness"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: shopnet-prod-web
+    restart: always
+    env_file:
+      - .env.production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    networks:
+      - shopnet-prod-network
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1024M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  workers:
+    build:
+      context: .
+      dockerfile: apps/workers/Dockerfile
+    container_name: shopnet-prod-workers
+    restart: always
+    env_file:
+      - .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - shopnet-prod-network
+    deploy:
+      resources:
+        limits:
+          cpus: "3.0"
+          memory: 4096M
+        reservations:
+          cpus: "1.0"
+          memory: 1024M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: shopnet-prod-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-shopnet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-shopnet_movies}
+    command: >
+      postgres
+        -c shared_buffers=1GB
+        -c effective_cache_size=3GB
+        -c work_mem=32MB
+        -c maintenance_work_mem=256MB
+        -c min_wal_size=1GB
+        -c max_wal_size=4GB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c default_statistics_target=100
+        -c max_connections=200
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./scripts/backups:/backups
+    networks:
+      - shopnet-prod-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shopnet} -d ${POSTGRES_DB:-shopnet_movies}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: shopnet-prod-redis
+    restart: always
+    command: >
+      redis-server
+        --requirepass ${REDIS_PASSWORD}
+        --appendonly yes
+        --appendfsync everysec
+        --maxmemory 2gb
+        --maxmemory-policy noeviction
+    volumes:
+      - redis_prod_data:/data
+    networks:
+      - shopnet-prod-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  postgres_prod_data:
+    name: shopnet_postgres_prod_data
+  redis_prod_data:
+    name: shopnet_redis_prod_data
+
+networks:
+  shopnet-prod-network:
+    name: shopnet_prod_network
+    driver: bridge

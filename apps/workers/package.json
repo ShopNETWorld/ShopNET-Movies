@@ -1,0 +1,31 @@
+{
+  "name": "@shopnet/workers",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@shopnet/ai-gateway": "workspace:*",
+    "@shopnet/database": "workspace:*",
+    "@shopnet/social-publishing": "workspace:*",
+    "@shopnet/logger": "workspace:*",
+    "@shopnet/types": "workspace:*",
+    "bullmq": "^5.12.15",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@shopnet/config-typescript": "workspace:*",
+    "@types/node": "^20.16.5",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}
